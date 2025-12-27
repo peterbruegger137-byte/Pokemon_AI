@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8">
+    <title>PokeAI Advanced Monitor v4.0</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        body { background-color: #0d1117; color: #c9d1d9; font-family: 'Segoe UI', sans-serif; overflow-x: hidden; }
+        .card { background-color: #161b22; border: 1px solid #30363d; border-radius: 8px; margin-bottom: 1rem; transition: transform 0.2s; }
+        .card:hover { border-color: #58a6ff; }
+        .chart-container { position: relative; height: 160px; width: 100%; }
+        .btn-primary { background-color: #238636; border: none; font-weight: bold; }
+        .metric-label { color: #8b949e; font-size: 0.65rem; text-transform: uppercase; font-weight: bold; letter-spacing: 1px; }
+        .metric-value { font-size: 1.4rem; font-weight: bold; color: #58a6ff; }
+        .status-badge { padding: 6px 14px; border-radius: 20px; font-size: 0.8rem; font-weight: bold; }
+        .bg-running { background-color: #238636; box-shadow: 0 0 15px rgba(35, 134, 54, 0.4); animation: pulse 2s infinite; }
+        .bg-stopped { background-color: #da3633; }
+        @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.7; } 100% { opacity: 1; } }
+        
+        /* Map Grid Styles */
+        .map-grid { display: grid; grid-template-columns: repeat(20, 1fr); gap: 2px; background: #000; padding: 5px; border-radius: 4px; }
+        .map-cell { aspect-ratio: 1; background: #21262d; border-radius: 1px; transition: 0.5s; position: relative; }
+        .hotspot-tag { background: #1f6feb; color: white; padding: 2px 8px; border-radius: 12px; font-size: 0.7rem; margin: 2px; display: inline-block; }
+        
+        /* NEU: Gebietsfarben */
+        .cell-grass { background: #238636 !important; box-shadow: inset 0 0 5px #3fb950; }
+        .cell-water { background: #0969da !important; box-shadow: inset 0 0 5px #58a6ff; }
+    </style>
+</head>
+<body>
+
+<div class="container-fluid py-3 px-4">
+    <div class="row mb-3 align-items-center">
+        <div class="col-md-6">
+            <h1 class="h5 m-0">🎮 MASTERCONTROLLER: <span class="text-primary">EMERALD JUGGERNAUT</span></h1>
+        </div>
+        <div class="col-md-6 text-end">
+            <span th:class="${isRunning ? 'status-badge bg-running' : 'status-badge bg-stopped'}" 
+                  th:text="${isRunning ? '● JUGGERNAUT AKTIV' : '○ SYSTEM PAUSIERT'}"></span>
+        </div>
+    </div>
+
+    <div class="row mb-2">
+        <div class="col-md-2" th:each="stat : ${lastStat}">
+            <div class="card p-2 text-center">
+                <div class="metric-label">Timesteps</div>
+                <div class="metric-value" th:text="${stat.timesteps}">0</div>
+            </div>
+        </div>
+        <div class="col-md-2">
+            <div class="card p-2 text-center">
+                <div class="metric-label">Kämpfe Gewonnen</div>
+                <div id="battlesVal" class="metric-value text-success">0</div>
+            </div>
+        </div>
+        <div class="col-md-2">
+            <div class="card p-2 text-center">
+                <div class="metric-label text-danger">Wand-Kollisionen</div>
+                <div id="wallVal" class="metric-value text-danger">0</div>
+            </div>
+        </div>
+        <div class="col-md-2">
+            <div class="card p-2 text-center">
+                <div class="metric-label">Entdeckte Orte</div>
+                <div id="hotspotCount" class="metric-value text-info">0</div>
+            </div>
+        </div>
+        <div class="col-md-2">
+            <div class="card p-2 text-center">
+                <div class="metric-label">Exploration</div>
+                <div id="epsilonVal" class="metric-value text-warning">0.0000</div>
+            </div>
+        </div>
+    </div>
+
+    <div class="row">
+        <div class="col-md-3">
+            <div class="card p-3">
+                <h6 class="metric-label mb-3">Agenten-Steuerung</h6>
+                <form th:action="@{/start}" method="post">
+                    <select name="mode" class="form-select form-select-sm bg-dark text-white border-secondary mb-2">
+                        <option value="work">Juggernaut (Aggressiv)</option>
+                        <option value="perf">Performance Mode</option>
+                    </select>
+                    <button type="submit" class="btn btn-primary btn-sm w-100 mb-2">🚀 Start Juggernaut</button>
+                </form>
+                <form th:action="@{/stop}" method="post">
+                    <button type="submit" class="btn btn-outline-danger btn-sm w-100">🛑 Stop & Save</button>
+                </form>
+            </div>
+
+            <div class="card p-3">
+                <h6 class="metric-label mb-2">🗺️ Welt-Gedächtnis (Gras/Wasser)</h6>
+                <div class="map-grid" id="mapGrid"></div>
+                <div class="mt-2 small text-muted">
+                    <span class="badge bg-success">■</span> Gras 
+                    <span class="badge bg-primary ms-2">■</span> Wasser
+                </div>
+            </div>
+
+            <div class="card p-3">
+                <h6 class="metric-label mb-2">💡 Letzte Hotspots</h6>
+                <div id="hotspotContainer"></div>
+            </div>
+        </div>
+
+        <div class="col-md-9">
+            <div class="card p-3">
+                <h6 class="metric-label">📈 Reward & Kampf-Effizienz (Live)</h6>
+                <div class="chart-container" style="height: 250px;">
+                    <canvas id="rewardChart"></canvas>
+                </div>
+            </div>
+
+            <div class="row mt-2">
+                <div class="col-md-6">
+                    <div class="card p-3">
+                        <h6 class="metric-label">🧠 KI Sicherheit (Entropy)</h6>
+                        <div class="chart-container">
+                            <canvas id="entropyChart"></canvas>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-6">
+                    <div class="card p-3">
+                        <h6 class="metric-label">⚡ FPS / Rechenleistung</h6>
+                        <div class="chart-container">
+                            <canvas id="fpsChart"></canvas>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    let rewardChart, entropyChart, fpsChart;
+
+    function initCharts() {
+        const config = (color, isBar = false) => ({
+            type: isBar ? 'bar' : 'line',
+            data: { labels: [], datasets: [{ data: [], borderColor: color, backgroundColor: color + '33', fill: true, tension: 0.4, pointRadius: 0 }] },
+            options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { x: { display: false }, y: { grid: { color: '#30363d' } } } }
+        });
+
+        rewardChart = new Chart(document.getElementById('rewardChart'), config('#3fb950'));
+        entropyChart = new Chart(document.getElementById('entropyChart'), config('#f1e05a'));
+        fpsChart = new Chart(document.getElementById('fpsChart'), config('#1f6feb', true));
+
+        // Map Grid initialisieren (20x20)
+        const grid = document.getElementById('mapGrid');
+        for(let i=0; i<400; i++) {
+            const cell = document.createElement('div');
+            cell.className = 'map-cell';
+            cell.id = `cell-${i}`;
+            grid.appendChild(cell);
+        }
+    }
+
+    async function updateData() {
+        try {
+            const [hRes, aRes, mRes] = await Promise.all([
+                fetch('/api/history'), fetch('/api/analytics'), fetch('/api/map')
+            ]);
+            
+            const history = await hRes.json();
+            const mapData = await mRes.json();
+
+            if (history.length > 0) {
+                const labels = history.map(s => s.timesteps);
+                updateLine(rewardChart, labels, history.map(s => s.reward));
+                updateLine(entropyChart, labels, history.map(s => s.entropy));
+                updateLine(fpsChart, labels.slice(-20), history.map(s => s.fps).slice(-20));
+
+                const last = history[history.length - 1];
+                document.getElementById('epsilonVal').innerText = last.epsilon.toFixed(4);
+                document.getElementById('battlesVal').innerText = last.battlesWon;
+                document.getElementById('wallVal').innerText = last.wallCollisions; // Update Wand-Zähler
+            }
+
+            if (mapData) {
+                document.getElementById('hotspotCount').innerText = mapData.length;
+                const hotspotCont = document.getElementById('hotspotContainer');
+                
+                mapData.forEach(p => {
+                    const idx = Math.abs(p.locationHash.split('').reduce((a,b)=>a+b.charCodeAt(0),0)) % 400;
+                    const cell = document.getElementById(`cell-${idx}`);
+                    if(cell) {
+                        // Visuelle Unterscheidung Gras/Wasser
+                        if(p.areaType === 'grass') cell.classList.add('cell-grass');
+                        else if(p.areaType === 'water') cell.classList.add('cell-water');
+                    }
+                });
+
+                hotspotCont.innerHTML = mapData.slice(-5).map(m => 
+                    `<span class="hotspot-tag" style="background:${m.areaType === 'water' ? '#0969da' : '#238636'}">
+                        ${m.areaType === 'water' ? '💧' : '🌿'} ${m.locationHash}
+                    </span>`
+                ).join('');
+            }
+        } catch (e) { console.error("Update Error", e); }
+    }
+
+    function updateLine(chart, labels, data) {
+        chart.data.labels = labels;
+        chart.data.datasets[0].data = data;
+        chart.update('none');
+    }
+
+    initCharts();
+    setInterval(updateData, 3000);
+</script>
+</body>
+</html>

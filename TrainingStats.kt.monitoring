@@ -1,0 +1,15 @@
+package com.pokeai.monitoring
+
+import org.springframework.data.annotation.Id
+import org.springframework.data.relational.core.mapping.Table
+import java.time.LocalDateTime
+
+@Table("training_stats") // Name der Tabelle in deiner Docker-DB
+data class TrainingStats(
+    @Id 
+    val id: Long? = null, // Die ID wird von der DB automatisch vergeben
+    val timesteps: Int,
+    val reward: Double,
+    val totalLevel: Int,
+    val timestamp: LocalDateTime = LocalDateTime.now() // Speichert automatisch die Uhrzeit
+)

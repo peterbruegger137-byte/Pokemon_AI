@@ -1,0 +1,15 @@
+package com.pokeai.monitoring
+
+import org.springframework.web.bind.annotation.*
+import reactor.core.publisher.Mono
+
+@RestController
+@RequestMapping("/api/stats")
+class StatsController(private val statsRepository: StatsRepository) {
+
+    @PostMapping
+    fun receiveStats(@RequestBody stats: TrainingStats): Mono<TrainingStats> {
+        println("Empfange Daten von Python-Agent: Schritt ${stats.timesteps}, Reward ${stats.reward}")
+        return statsRepository.save(stats) // Schreibt die Daten direkt in die Docker-DB
+    }
+}

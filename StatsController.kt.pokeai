@@ -1,0 +1,31 @@
+package com.pokeai
+
+import org.springframework.data.annotation.Id
+import org.springframework.data.relational.core.mapping.Table
+import org.springframework.data.repository.reactive.ReactiveCrudRepository
+import org.springframework.web.bind.annotation.*
+import reactor.core.publisher.Flux
+import reactor.core.publisher.Mono
+import java.time.LocalDateTime
+
+@Table("training_stats")
+data class TrainingStats(
+    @Id val id: Long? = null,
+    val timesteps: Int,
+    val reward: Double,
+    val totalLevel: Int,
+    val timestamp: LocalDateTime = LocalDateTime.now()
+)
+
+interface StatsRepository : ReactiveCrudRepository<TrainingStats, Long>
+
+@RestController
+@RequestMapping("/api/stats")
+class StatsController(val repo: StatsRepository) {
+
+    @PostMapping
+    fun save(@RequestBody stats: TrainingStats): Mono<TrainingStats> = repo.save(stats)
+
+    @GetMapping(produces = ["text/event-stream"])
+    fun streamStats(): Flux<TrainingStats> = repo.findAll() // Live-Stream für das Monitoring
+}
